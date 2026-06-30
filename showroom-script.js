@@ -1,64 +1,84 @@
 const ShowroomCustomizer = {
+  // ==========================================
+  // Initialization
+  // ==========================================
+
   async init(config) {
     this.config = config;
-
-    this.observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-
-          const item = entry.target;
-
-          item.style.backgroundImage = item.dataset.bg;
-
-          delete item.dataset.bg;
-
-          this.observer.unobserve(item);
-        });
-      },
-      {
-        rootMargin: '300px 0px',
-        threshold: 0.01,
-      }
-    );
+    this.initializeObserver();
 
     const pathname = window.location.pathname;
     const showroomConfig = config.showrooms[pathname];
 
     if (!showroomConfig) return;
 
-    const showroomContainer = jQuery('#inventory-showroom');
+    this.showroomContainer = jQuery('#inventory-showroom');
+
+    await this.prepareShowroom(showroomConfig, pathname);
+
+    this.observeImages(this.showroomContainer);
+
+    config.afterInit?.();
+  },
+
+  initializeObserver() {
+    this.observer = new IntersectionObserver(this.onIntersection.bind(this), {
+      rootMargin: '300px 0px',
+      threshold: 0.01,
+    });
+  },
+
+  onIntersection(entries) {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+
+      const item = entry.target;
+
+      item.style.backgroundImage = item.dataset.bg;
+
+      delete item.dataset.bg;
+
+      this.observer.unobserve(item);
+    });
+  },
+
+  async prepareShowroom(showroomConfig, pathname, titleRules) {
     const titleRules = [
       ...(this.config.cleanTitleRules || []),
       ...(showroomConfig.cleanTitleRules || []),
     ];
 
-    await this.appendShowrooms(showroomConfig, showroomContainer);
-    this.removeCategories(showroomConfig, showroomContainer);
-    this.createCategories(showroomConfig, showroomContainer);
+    await this.appendShowrooms(showroomConfig);
+    this.removeCategories(showroomConfig);
+    this.createCategories(showroomConfig);
     this.processModels(showroomConfig);
     this.removeEmptyCategories();
     this.removeShowroomTitles(pathname);
     this.cleanPageTitles(titleRules);
+  },
 
-    jQuery(showroomContainer)
+  observeImages() {
+    this.showroomContainer
       .find('.showroom-item')
       .each((_, e) => this.observeBackgroundImage(e));
-
-    if (typeof config.afterInit === 'function') {
-      config.afterInit();
-    }
   },
+
+  // ==========================================
+  // Utilities
+  // ==========================================
 
   safeArray(v) {
     return Array.isArray(v) ? v : [];
   },
-
-  observeBackgroundImage(element) {
-    this.observer.observe(element);
+  getModelName(element) {
+    return jQuery(element).find('.makename p').text().trim();
   },
 
-  async appendShowrooms(showroomConfig, showroomContainer) {
+  // ==========================================
+  // Loading
+  // ==========================================
+
+  async appendShowrooms(showroomConfig) {
     const showrooms = showroomConfig.appendShowrooms || [];
     const newShowrooms = [];
 
@@ -81,7 +101,6 @@ const ShowroomCustomizer = {
           element.style.backgroundImage = '';
         });
 
-        // showroomContainer.append();
         newShowrooms.push(html.find('.showroom-container').first());
       } catch (error) {
         console.error('Error appending showroom:', url, error);
@@ -89,16 +108,24 @@ const ShowroomCustomizer = {
     }
 
     newShowrooms.forEach((showroom) => {
-      showroomContainer.append(showroom);
+      this.showroomContainer.append(showroom);
     });
   },
-  createCategories(showroomConfig, showroomContainer) {
+  observeBackgroundImage(element) {
+    this.observer.observe(element);
+  },
+
+  // ==========================================
+  // Categories
+  // ==========================================
+
+  createCategories(showroomConfig) {
     const categories = this.safeArray(showroomConfig.newCategory);
 
     categories.forEach(({ newCategories, brand }) => {
       if (!newCategories || !brand) return;
 
-      const categoryContainer = showroomContainer
+      const categoryContainer = this.showroomContainer
         .find('h1')
         .filter((_, e) => jQuery(e).text().includes(brand))
         .first()
@@ -115,13 +142,13 @@ const ShowroomCustomizer = {
     });
   },
 
-  removeCategories(showroomConfig, showroomContainer) {
+  removeCategories(showroomConfig) {
     const categoriesToHide = this.safeArray(showroomConfig.removeCategories);
 
     categoriesToHide.forEach(({ categories, brand }) => {
       if (!brand || !categories) return;
 
-      const categoryContainer = showroomContainer
+      const categoryContainer = this.showroomContainer
         .find('h1')
         .filter((_, e) =>
           jQuery(e).text().toLowerCase().includes(brand.toLowerCase())
@@ -139,48 +166,6 @@ const ShowroomCustomizer = {
         subCategoryContainer.remove();
       });
     });
-  },
-
-  processModels(showroomConfig) {
-    const models = showroomConfig.models || {};
-
-    jQuery('.showroom-container .showroom-item').each((_, element) => {
-      const modelName = this.getModelName(element);
-      const modelConfig = models[modelName];
-
-      if (!modelConfig) return;
-
-      this.applyModelConfiguration(element, modelConfig);
-    });
-  },
-
-  getModelName(element) {
-    return jQuery(element).find('.makename p').text().trim();
-  },
-
-  applyModelConfiguration(element, config) {
-    const { hide, urlImage, category } = config;
-
-    if (hide) {
-      this.hideModel(element);
-      return;
-    }
-
-    if (urlImage) {
-      this.replaceModelImage(element, urlImage);
-    }
-
-    if (category) {
-      this.moveModelToCategory(element, category);
-    }
-  },
-
-  hideModel(element) {
-    jQuery(element).closest('a').remove();
-  },
-
-  replaceModelImage(element, imageUrl) {
-    jQuery(element).css('background-image', `url(${imageUrl})`);
   },
 
   moveModelToCategory(element, categoryName) {
@@ -232,6 +217,52 @@ const ShowroomCustomizer = {
     `);
     }
   },
+
+  // ==========================================
+  // Models
+  // ==========================================
+
+  processModels(showroomConfig) {
+    const models = showroomConfig.models || {};
+
+    jQuery('.showroom-container .showroom-item').each((_, element) => {
+      const modelName = this.getModelName(element);
+      const modelConfig = models[modelName];
+
+      if (!modelConfig) return;
+
+      this.applyModelConfiguration(element, modelConfig);
+    });
+  },
+
+  applyModelConfiguration(element, config) {
+    const { hide, urlImage, category } = config;
+
+    if (hide) {
+      this.hideModel(element);
+      return;
+    }
+
+    if (urlImage) {
+      this.replaceModelImage(element, urlImage);
+    }
+
+    if (category) {
+      this.moveModelToCategory(element, category);
+    }
+  },
+
+  hideModel(element) {
+    jQuery(element).closest('a').remove();
+  },
+
+  replaceModelImage(element, imageUrl) {
+    jQuery(element).css('background-image', `url(${imageUrl})`);
+  },
+
+  // ==========================================
+  // Titles
+  // ==========================================
 
   cleanPageTitles(titleRules) {
     jQuery('.showroom-container h1').each((_, element) => {
