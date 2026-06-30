@@ -42,7 +42,7 @@ const ShowroomCustomizer = {
     });
   },
 
-  async prepareShowroom(showroomConfig, pathname, titleRules) {
+  async prepareShowroom(showroomConfig, pathname) {
     const titleRules = [
       ...(this.config.cleanTitleRules || []),
       ...(showroomConfig.cleanTitleRules || []),
